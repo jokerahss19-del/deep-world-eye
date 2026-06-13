@@ -13,48 +13,32 @@ export const CATEGORIES = [
   "Pesquisa Livre",
 ] as const;
 
-const SourceCategoryEnum = z.enum([
-  "Notícias",
-  "Artigos Científicos",
-  "Reddit",
-  "X (Twitter)",
-  "TikTok",
-  "Instagram",
-  "YouTube",
-  "Telegram",
-  "Blogs",
-  "Fóruns",
-  "Outros",
-]);
-
-const ConfidenceEnum = z.enum(["Alta", "Média", "Baixa"]);
-
 const reportSchema = z.object({
-  resumoExecutivo: z.string().describe("Síntese curta em 2-3 parágrafos"),
-  relatorioAnalitico: z.string().describe("Relatório detalhado em markdown, vários parágrafos"),
-  principaisFatos: z.array(z.string()).describe("Bullets dos fatos centrais"),
+  resumoExecutivo: z.string(),
+  relatorioAnalitico: z.string(),
+  principaisFatos: z.array(z.string()),
   cronologia: z.array(z.object({
-    data: z.string().describe("Data ou período (ISO ou texto curto)"),
+    data: z.string(),
     evento: z.string(),
   })),
   temasRecorrentes: z.array(z.string()),
-  divergencias: z.array(z.string()).describe("Pontos onde fontes discordam"),
+  divergencias: z.array(z.string()),
   inconsistencias: z.array(z.string()),
   relacoes: z.array(z.object({
     de: z.string(),
     para: z.string(),
-    tipo: z.string().describe("Tipo de relação: colega, financiador, opositor, etc"),
+    tipo: z.string(),
   })),
   fontes: z.array(z.object({
-    categoria: SourceCategoryEnum,
+    categoria: z.string(),
     titulo: z.string(),
-    autorOuPerfil: z.string().optional(),
-    veiculo: z.string().optional(),
-    data: z.string().optional(),
+    autorOuPerfil: z.string(),
+    veiculo: z.string(),
+    data: z.string(),
     url: z.string(),
-    confiabilidade: ConfidenceEnum,
+    confiabilidade: z.string(),
     justificativaConfiabilidade: z.string(),
-    trecho: z.string().describe("Citação ou resumo do que a fonte traz"),
+    trecho: z.string(),
   })),
 });
 
