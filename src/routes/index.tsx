@@ -381,7 +381,7 @@ function ReportView({
                 <Badge variant="outline" className="font-display text-[10px] uppercase tracking-wider border-primary/40 text-primary">
                   {s.categoria}
                 </Badge>
-                <ConfidenceBadge level={s.confiabilidade} />
+                <ConfidenceBadge level={(["Alta","Média","Baixa"].includes(s.confiabilidade) ? s.confiabilidade : "Média") as "Alta" | "Média" | "Baixa"} />
                 {s.data && (
                   <span className="font-display text-[10px] text-muted-foreground uppercase tracking-wider">
                     {s.data}
