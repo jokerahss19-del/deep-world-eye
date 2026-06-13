@@ -81,6 +81,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "Motor de investigação OSINT em múltiplas camadas." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { property: "og:title", content: "Olho do Mundo V0.02 Beta" },
+      { name: "twitter:title", content: "Olho do Mundo V0.02 Beta" },
+      { property: "og:description", content: "Motor de investigação OSINT em múltiplas camadas." },
+      { name: "twitter:description", content: "Motor de investigação OSINT em múltiplas camadas." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/1432237c-80c3-44a1-bc8f-770eb7a2bc60/id-preview-31133f97--6bda3b62-c449-4a46-9fea-4c4baf5fef36.lovable.app-1781381727336.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/1432237c-80c3-44a1-bc8f-770eb7a2bc60/id-preview-31133f97--6bda3b62-c449-4a46-9fea-4c4baf5fef36.lovable.app-1781381727336.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
