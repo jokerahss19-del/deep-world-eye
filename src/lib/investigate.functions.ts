@@ -171,11 +171,20 @@ Campos obrigatórios:
 
 Cubra contexto, principais fatos, linha do tempo, atores relacionados, controvérsias e fontes diversificadas com avaliação de confiabilidade.`;
 
-    const { text } = await generateText({
-      model: gateway("google/gemini-2.5-flash"),
-      system,
-      prompt,
-    });
+    let text = "";
+
+    try {
+      const result = await generateText({
+        model: gateway("google/gemini-2.5-flash"),
+        system,
+        prompt,
+      });
+      text = result.text;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Falha desconhecida ao consultar a IA.";
+      return fallbackReport(data.query, data.categoria, message);
+    }
 
     try {
       return normalizeReport(extractJson(text), data.query, data.categoria, text);
