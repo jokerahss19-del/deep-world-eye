@@ -181,7 +181,8 @@ Cubra contexto, principais fatos, linha do tempo, atores relacionados, contrové
       });
       text = result.text;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha desconhecida ao consultar a IA.";
+      const message =
+        error instanceof Error ? error.message : "Falha desconhecida ao consultar a IA.";
       return fallbackReport(data.query, data.categoria, message);
     }
 
