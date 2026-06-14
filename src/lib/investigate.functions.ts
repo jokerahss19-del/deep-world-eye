@@ -4,18 +4,30 @@ import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway.server";
 
 export const CATEGORIES = [
+  "Pesquisa Livre",
   "Pessoa Pública",
   "Empresa",
   "Assunto",
   "Evento",
   "Organização",
   "Notícia",
-  "Pesquisa Livre",
+  "X / Twitter",
+  "Instagram",
+  "TikTok",
+  "YouTube",
+  "LinkedIn",
+  "Reddit",
+  "Telegram",
+  "Facebook",
+  "GitHub",
+  "Análise Maltego (Grafo)",
 ] as const;
 
 const reportSchema = z.object({
   resumoExecutivo: z.string(),
   relatorioAnalitico: z.string(),
+  scoreVeracidade: z.number(),
+  metodologia: z.string(),
   principaisFatos: z.array(z.string()),
   cronologia: z.array(z.object({
     data: z.string(),
@@ -52,6 +64,15 @@ const isRecord = (value: unknown): value is RecordValue =>
 const asText = (value: unknown, fallback = "") =>
   typeof value === "string" ? value.trim() : fallback;
 
+const asNumber = (value: unknown, fallback = 0) => {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.min(100, Math.round(value)));
+  if (typeof value === "string") {
+    const n = parseFloat(value);
+    if (Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(n)));
+  }
+  return fallback;
+};
+
 const asTextArray = (value: unknown) =>
   Array.isArray(value)
     ? value.map((item) => asText(item)).filter(Boolean)
@@ -73,7 +94,9 @@ const fallbackReport = (query: string, categoria: string, rawText?: string): Inv
   resumoExecutivo: `A investigação sobre "${query}" foi concluída, mas a resposta precisou ser recuperada em modo seguro porque veio fora do formato esperado.`,
   relatorioAnalitico:
     rawText?.trim() ||
-    `Não foi possível estruturar automaticamente o dossiê de ${categoria.toLowerCase()} para "${query}". Tente refinar o alvo ou repetir a investigação.`,
+    `Não foi possível estruturar automaticamente o dossiê de ${categoria.toLowerCase()} para "${query}".`,
+  scoreVeracidade: 0,
+  metodologia: "Fallback — algoritmo de triangulação não pôde ser executado por ausência de JSON estruturado.",
   principaisFatos: rawText ? [rawText.trim().slice(0, 700)] : [],
   cronologia: [],
   temasRecorrentes: [],
@@ -89,6 +112,8 @@ const normalizeReport = (value: unknown, query: string, categoria: string, rawTe
   const report: InvestigationReport = {
     resumoExecutivo: asText(value.resumoExecutivo, `Dossiê inicial sobre "${query}".`),
     relatorioAnalitico: asText(value.relatorioAnalitico, rawText ?? "Sem relatório analítico retornado."),
+    scoreVeracidade: asNumber(value.scoreVeracidade, 0),
+    metodologia: asText(value.metodologia, "Triangulação Maltego: cruzamento de entidades, contagem de fontes independentes, ponderação por reputação e recência."),
     principaisFatos: asTextArray(value.principaisFatos),
     cronologia: Array.isArray(value.cronologia)
       ? value.cronologia.map((item) => {
@@ -139,37 +164,51 @@ export const investigate = createServerFn({ method: "POST" })
 
     const gateway = createLovableAiGatewayProvider(key);
 
-    const system = `Você é o "Olho do Mundo", um analista sênior de OSINT/SOCMINT.
-Sua tarefa: produzir um dossiê investigativo profundo, factual e estruturado sobre o alvo informado.
+    const system = `Você é o "OLHO DO MUNDO", analista sênior de OSINT/SOCMINT operando uma plataforma inspirada na lógica de transforms da Maltego.
 
-Regras inegociáveis:
-- TODA afirmação relevante deve vir acompanhada de pelo menos uma fonte na lista "fontes".
-- Cite SOMENTE fontes que existam de verdade (veículos reais, perfis reais, URLs plausíveis). NUNCA invente URLs.
-- Diversifique camadas: imprensa internacional, imprensa local, comunidades (Reddit/HN/fóruns), redes sociais públicas (X, TikTok, Instagram, YouTube, Telegram), acadêmico (Scholar/arXiv/PubMed) — quando aplicável ao alvo.
-- Classifique cada fonte como Alta/Média/Baixa confiabilidade, com justificativa (reputação, verificabilidade, confirmações independentes, proximidade do evento).
-- Sinalize divergências e inconsistências explicitamente.
-- Construa uma cronologia objetiva.
+ALGORITMO DE INVESTIGAÇÃO (obrigatório):
+1. ENTITY EXTRACTION — identifique a entidade alvo (pessoa, empresa, domínio, handle, evento) e suas propriedades.
+2. TRANSFORMS — execute mentalmente transforms encadeadas como na Maltego: Entity → Aliases → Domains → Social Handles → Affiliations → Documents → Events. Cada transform deve gerar nós ligados em "relacoes".
+3. MULTI-LAYER HARVEST — colete em camadas: imprensa internacional/local, comunidades (Reddit, HN, 4chan-archives, fóruns), redes sociais públicas (X/Twitter, Instagram, TikTok, YouTube, LinkedIn, Facebook, Telegram, Mastodon, Bluesky, GitHub), bancos acadêmicos (Scholar, arXiv, PubMed), registros públicos (WHOIS, SEC, CNPJ, processos), leak repositories conhecidos. Adapte ao alvo.
+4. SOURCE SCORING (algoritmo de veracidade) — para cada fonte avalie:
+   • Reputação do veículo (peer-reviewed / imprensa estabelecida / blog / anônimo).
+   • Verificabilidade (primária vs secundária; documento original disponível).
+   • Independência (fontes que se confirmam mutuamente sem co-citação circular).
+   • Recência e proximidade temporal do evento.
+   • Histórico de retratação.
+5. CROSS-VALIDATION — fatos sustentados por ≥2 fontes independentes de alta reputação ganham peso. Contradições explícitas reduzem o score.
+6. SCORE DE VERACIDADE GLOBAL (0-100):
+   score = 100
+     × (fontes_independentes_alta / max(1, total_fatos))
+     × (1 - contradicoes / max(1, total_fatos))
+     × fator_recência
+   Arredonde para inteiro. Se houver pouca evidência, mantenha o score baixo — NUNCA infle.
+7. GRAPH RELATIONS — preencha "relacoes" como arestas de um grafo: { de, para, tipo } (ex: "Pessoa X" —trabalha_em→ "Empresa Y").
+
+REGRAS:
+- Cite apenas fontes plausíveis e reais. NUNCA invente URLs ou veículos.
 - Tudo em português do Brasil.
-- Se houver poucas evidências, diga isso e baixe a confiança — não fabrique.`;
+- Se evidência for fraca, diga isso, reduza o score e marque "inconsistencias".`;
 
-    const prompt = `CATEGORIA: ${data.categoria}
-ALVO DA INVESTIGAÇÃO: ${data.query}
+    const prompt = `CATEGORIA / MODO: ${data.categoria}
+ALVO: ${data.query}
 
-Responda SOMENTE com um objeto JSON válido, sem markdown, sem texto antes/depois.
-Campos obrigatórios:
+Responda SOMENTE com JSON válido (sem markdown, sem texto fora do objeto):
 {
   "resumoExecutivo": "string",
-  "relatorioAnalitico": "string",
+  "relatorioAnalitico": "string (denso, multi-parágrafo)",
+  "scoreVeracidade": 0-100,
+  "metodologia": "string descrevendo as transforms aplicadas e o cálculo do score",
   "principaisFatos": ["string"],
-  "cronologia": [{ "data": "string", "evento": "string" }],
+  "cronologia": [{ "data": "AAAA-MM-DD ou descrição", "evento": "string" }],
   "temasRecorrentes": ["string"],
   "divergencias": ["string"],
   "inconsistencias": ["string"],
   "relacoes": [{ "de": "string", "para": "string", "tipo": "string" }],
-  "fontes": [{ "categoria": "string", "titulo": "string", "autorOuPerfil": "string", "veiculo": "string", "data": "string", "url": "string", "confiabilidade": "Alta|Média|Baixa", "justificativaConfiabilidade": "string", "trecho": "string" }]
+  "fontes": [{ "categoria": "string (Imprensa|Rede Social|Acadêmico|Comunidade|Registro Público|Documento)", "titulo": "string", "autorOuPerfil": "string", "veiculo": "string", "data": "string", "url": "string", "confiabilidade": "Alta|Média|Baixa", "justificativaConfiabilidade": "string", "trecho": "string" }]
 }
 
-Cubra contexto, principais fatos, linha do tempo, atores relacionados, controvérsias e fontes diversificadas com avaliação de confiabilidade.`;
+Mínimo de 6 fontes diversificadas entre camadas quando o alvo permitir. Inclua ≥3 arestas em "relacoes".`;
 
     let text = "";
 
