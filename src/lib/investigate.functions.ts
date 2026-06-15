@@ -85,6 +85,15 @@ const asNumber = (value: unknown, fallback = 0) => {
   return fallback;
 };
 
+const asCount = (value: unknown, fallback = 0) => {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.round(value));
+  if (typeof value === "string") {
+    const n = parseFloat(value);
+    if (Number.isFinite(n)) return Math.max(0, Math.round(n));
+  }
+  return fallback;
+};
+
 const asTextArray = (value: unknown) =>
   Array.isArray(value)
     ? value.map((item) => asText(item)).filter(Boolean)
@@ -220,12 +229,15 @@ const uniqueEvidence = (items: Array<EvidenceSource | null>) => {
 
 const collectDirectUrlEvidence = async (query: string) => {
   const urls = query.match(/https?:\/\/[^\s]+|\b[a-z0-9.-]+\.[a-z]{2,}\S*/gi) ?? [];
-  const tasks = urls.filter(isProbablyUrl).slice(0, 4).map((url) => makeEvidence({
-    category: "Documento",
-    title: `URL informada: ${url}`,
-    url,
-    vehicle: new URL(safeUrl(url)).hostname,
-  }));
+  const tasks = urls.filter(isProbablyUrl).slice(0, 4).map((url) => {
+    const normalized = safeUrl(url);
+    return makeEvidence({
+      category: "Documento",
+      title: `URL informada: ${url}`,
+      url: normalized,
+      vehicle: normalized ? new URL(normalized).hostname : "URL informada",
+    });
+  });
   return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
 };
 
@@ -426,6 +438,28 @@ const noEvidenceReport = (query: string, categoria: string, attemptedEngines: nu
   inconsistencias: ["Nenhuma fonte integralmente lida e validada foi encontrada para sustentar afirmações."],
   relacoes: [],
   fontes: [],
+});
+
+const aiFormatFailureReport = (query: string, categoria: string, attemptedEngines: number, rejectedSources: number, evidence: EvidenceSource[]): InvestigationReport => ({
+  resumoExecutivo: `A investigação sobre "${query}" coletou fontes reais, mas a síntese da IA foi rejeitada por formato inválido.`,
+  relatorioAnalitico: `Modo ${categoria}: para evitar fontes inventadas, a resposta textual da IA foi descartada. As fontes abaixo foram coletadas, lidas integralmente e validadas pelo backend; nenhuma fonte fora desse corpus foi aceita.`,
+  scoreVeracidade: 0,
+  metodologia: "Fail-closed OSINT: coleta real → leitura integral → hash → IA restrita ao corpus → validação de URLs citadas. A etapa final falhou e foi bloqueada.",
+  coberturaFontes: {
+    fontesCadastradas: SOURCE_REGISTRY_COUNT,
+    motoresExecutados: attemptedEngines,
+    fontesVerificadas: evidence.length,
+    fontesComConteudoIntegral: evidence.length,
+    fontesRejeitadas: rejectedSources,
+    aviso: "Resposta da IA descartada; apenas fontes verificadas pelo backend são exibidas.",
+  },
+  principaisFatos: [],
+  cronologia: [],
+  temasRecorrentes: [],
+  divergencias: [],
+  inconsistencias: ["A síntese da IA não passou na validação estrutural e foi bloqueada para evitar alucinação de fontes."],
+  relacoes: [],
+  fontes: evidence.map(stripEvidenceContent),
 });
 
 const fallbackReport = (query: string, categoria: string, rawText?: string): InvestigationReport => ({
