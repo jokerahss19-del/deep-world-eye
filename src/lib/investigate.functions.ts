@@ -102,6 +102,15 @@ const extractJson = (text: string) => {
   return JSON.parse(candidate) as unknown;
 };
 
+const defaultCoverage = (aviso: string) => ({
+  fontesCadastradas: SOURCE_REGISTRY_COUNT,
+  motoresExecutados: 0,
+  fontesVerificadas: 0,
+  fontesComConteudoIntegral: 0,
+  fontesRejeitadas: 0,
+  aviso,
+});
+
 const fallbackReport = (query: string, categoria: string, rawText?: string): InvestigationReport => ({
   resumoExecutivo: `A investigação sobre "${query}" foi concluída, mas a resposta precisou ser recuperada em modo seguro porque veio fora do formato esperado.`,
   relatorioAnalitico:
@@ -109,6 +118,7 @@ const fallbackReport = (query: string, categoria: string, rawText?: string): Inv
     `Não foi possível estruturar automaticamente o dossiê de ${categoria.toLowerCase()} para "${query}".`,
   scoreVeracidade: 0,
   metodologia: "Fallback — algoritmo de triangulação não pôde ser executado por ausência de JSON estruturado.",
+  coberturaFontes: defaultCoverage("Nenhuma fonte externa foi validada no modo seguro."),
   principaisFatos: rawText ? [rawText.trim().slice(0, 700)] : [],
   cronologia: [],
   temasRecorrentes: [],
@@ -126,6 +136,16 @@ const normalizeReport = (value: unknown, query: string, categoria: string, rawTe
     relatorioAnalitico: asText(value.relatorioAnalitico, rawText ?? "Sem relatório analítico retornado."),
     scoreVeracidade: asNumber(value.scoreVeracidade, 0),
     metodologia: asText(value.metodologia, "Triangulação Maltego: cruzamento de entidades, contagem de fontes independentes, ponderação por reputação e recência."),
+    coberturaFontes: isRecord(value.coberturaFontes)
+      ? {
+          fontesCadastradas: asNumber(value.coberturaFontes.fontesCadastradas, SOURCE_REGISTRY_COUNT),
+          motoresExecutados: asNumber(value.coberturaFontes.motoresExecutados, 0),
+          fontesVerificadas: asNumber(value.coberturaFontes.fontesVerificadas, 0),
+          fontesComConteudoIntegral: asNumber(value.coberturaFontes.fontesComConteudoIntegral, 0),
+          fontesRejeitadas: asNumber(value.coberturaFontes.fontesRejeitadas, 0),
+          aviso: asText(value.coberturaFontes.aviso, "Fontes citadas exigem evidência validada."),
+        }
+      : defaultCoverage("Cobertura de fontes não informada pelo modelo."),
     principaisFatos: asTextArray(value.principaisFatos),
     cronologia: Array.isArray(value.cronologia)
       ? value.cronologia.map((item) => {
@@ -155,6 +175,9 @@ const normalizeReport = (value: unknown, query: string, categoria: string, rawTe
             confiabilidade: asText(entry.confiabilidade, "Média"),
             justificativaConfiabilidade: asText(entry.justificativaConfiabilidade, "Não informado."),
             trecho: asText(entry.trecho),
+            textoCompletoAnalisado: entry.textoCompletoAnalisado === true,
+            caracteresAnalisados: asNumber(entry.caracteresAnalisados, 0),
+            hashConteudo: asText(entry.hashConteudo),
           };
         }).filter((item) => item.titulo || item.url !== "#")
       : [],
