@@ -5,6 +5,7 @@ export type SourceCategory =
   | "Chan / Deepweb pública"
   | "Acadêmico"
   | "Registro Público"
+  | "Documento"
   | "Código / Segurança"
   | "Enciclopédia"
   | "Arquivo";
