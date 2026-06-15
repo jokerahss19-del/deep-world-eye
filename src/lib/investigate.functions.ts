@@ -326,6 +326,86 @@ const collectFourChanEvidence = async (query: string) => {
   return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
 };
 
+const collectEvidence = async (query: string) => {
+  const collectors = [
+    collectDirectUrlEvidence,
+    collectWikipediaEvidence,
+    collectWikidataEvidence,
+    collectArxivEvidence,
+    collectCrossrefEvidence,
+    collectHackerNewsEvidence,
+    collectFourChanEvidence,
+  ];
+  const results = await Promise.allSettled(collectors.map((collector) => collector(query)));
+  const evidence = uniqueEvidence(results.flatMap((result) => result.status === "fulfilled" ? result.value : []));
+  return {
+    evidence,
+    attemptedEngines: collectors.length,
+    rejectedSources: Math.max(0, collectors.length * 2 - evidence.length),
+  };
+};
+
+const evidencePromptBlock = (evidence: EvidenceSource[]) =>
+  evidence.map((source, index) => [
+    `FONTE_${index + 1}`,
+    `categoria=${source.categoria}`,
+    `titulo=${source.titulo}`,
+    `veiculo=${source.veiculo}`,
+    `url=${source.url}`,
+    `hash=${source.hashConteudo}`,
+    `caracteres=${source.caracteresAnalisados}`,
+    `conteudo_integral_inicio`,
+    source.conteudoIntegral,
+    `conteudo_integral_fim`,
+  ].join("\n")).join("\n\n---\n\n");
+
+const stripEvidenceContent = (source: EvidenceSource): InvestigationReport["fontes"][number] => ({
+  categoria: source.categoria,
+  titulo: source.titulo,
+  autorOuPerfil: source.autorOuPerfil,
+  veiculo: source.veiculo,
+  data: source.data,
+  url: source.url,
+  confiabilidade: source.confiabilidade,
+  justificativaConfiabilidade: source.justificativaConfiabilidade,
+  trecho: source.trecho,
+  textoCompletoAnalisado: true,
+  caracteresAnalisados: source.caracteresAnalisados,
+  hashConteudo: source.hashConteudo,
+});
+
+const enforceEvidenceOnly = (
+  report: InvestigationReport,
+  evidence: EvidenceSource[],
+  attemptedEngines: number,
+  rejectedSources: number,
+): InvestigationReport => {
+  const byUrl = new Map(evidence.map((source) => [source.url, source]));
+  const citedUrls = new Set<string>();
+  const fontes = report.fontes.flatMap((source) => {
+    const evidenceSource = byUrl.get(source.url);
+    if (!evidenceSource || citedUrls.has(evidenceSource.url)) return [];
+    citedUrls.add(evidenceSource.url);
+    return stripEvidenceContent(evidenceSource);
+  });
+  return {
+    ...report,
+    scoreVeracidade: fontes.length < 2 ? Math.min(report.scoreVeracidade, 25) : report.scoreVeracidade,
+    coberturaFontes: {
+      fontesCadastradas: SOURCE_REGISTRY_COUNT,
+      motoresExecutados: attemptedEngines,
+      fontesVerificadas: evidence.length,
+      fontesComConteudoIntegral: evidence.length,
+      fontesRejeitadas: rejectedSources + Math.max(0, report.fontes.length - fontes.length),
+      aviso: "Sem fonte inventada: o relatório só mantém URLs coletadas e lidas integralmente pelo backend. Fontes inacessíveis, parciais, curtas demais ou grandes demais são rejeitadas antes da análise.",
+    },
+    fontes,
+    inconsistencias: fontes.length === 0
+      ? [...report.inconsistencias, "Nenhuma fonte citada pela IA passou pela validação de URL e conteúdo integral."]
+      : report.inconsistencias,
+  };
+};
+
 const fallbackReport = (query: string, categoria: string, rawText?: string): InvestigationReport => ({
   resumoExecutivo: `A investigação sobre "${query}" foi concluída, mas a resposta precisou ser recuperada em modo seguro porque veio fora do formato esperado.`,
   relatorioAnalitico:
