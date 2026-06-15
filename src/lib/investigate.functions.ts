@@ -514,14 +514,20 @@ export const investigate = createServerFn({ method: "POST" })
     const key = process.env.LOVABLE_API_KEY;
     if (!key) throw new Error("LOVABLE_API_KEY ausente no ambiente do servidor.");
 
+    const { evidence, attemptedEngines, rejectedSources } = await collectEvidence(data.query);
+    if (evidence.length === 0) return noEvidenceReport(data.query, data.categoria, attemptedEngines, rejectedSources);
+
     const gateway = createLovableAiGatewayProvider(key);
+    const registryPreview = SOURCE_REGISTRY
+      .map((source) => `${source.name} [${source.category}]`)
+      .join("; ");
 
     const system = `Você é o "OLHO DO MUNDO", analista sênior de OSINT/SOCMINT operando uma plataforma inspirada na lógica de transforms da Maltego.
 
 ALGORITMO DE INVESTIGAÇÃO (obrigatório):
 1. ENTITY EXTRACTION — identifique a entidade alvo (pessoa, empresa, domínio, handle, evento) e suas propriedades.
 2. TRANSFORMS — execute mentalmente transforms encadeadas como na Maltego: Entity → Aliases → Domains → Social Handles → Affiliations → Documents → Events. Cada transform deve gerar nós ligados em "relacoes".
-3. MULTI-LAYER HARVEST — colete em camadas: imprensa internacional/local, comunidades (Reddit, HN, 4chan-archives, fóruns), redes sociais públicas (X/Twitter, Instagram, TikTok, YouTube, LinkedIn, Facebook, Telegram, Mastodon, Bluesky, GitHub), bancos acadêmicos (Scholar, arXiv, PubMed), registros públicos (WHOIS, SEC, CNPJ, processos), leak repositories conhecidos. Adapte ao alvo.
+3. MULTI-LAYER HARVEST — o backend possui ${SOURCE_REGISTRY_COUNT} fontes/motores cadastrados: ${registryPreview}. Você NÃO deve adicionar fontes fora do corpus validado abaixo.
 4. SOURCE SCORING (algoritmo de veracidade) — para cada fonte avalie:
    • Reputação do veículo (peer-reviewed / imprensa estabelecida / blog / anônimo).
    • Verificabilidade (primária vs secundária; documento original disponível).
@@ -538,12 +544,20 @@ ALGORITMO DE INVESTIGAÇÃO (obrigatório):
 7. GRAPH RELATIONS — preencha "relacoes" como arestas de um grafo: { de, para, tipo } (ex: "Pessoa X" —trabalha_em→ "Empresa Y").
 
 REGRAS:
-- Cite apenas fontes plausíveis e reais. NUNCA invente URLs ou veículos.
+- INEGOCIÁVEL: cite somente URLs presentes em CORPUS_VALIDADO. NUNCA invente URLs, veículos, posts, autores ou fontes.
+- Todas as fontes do corpus foram lidas integralmente pelo backend. Se algo não estiver no corpus, trate como desconhecido.
+- A lista "fontes" da resposta deve reutilizar exatamente url, titulo, veiculo, hashConteudo e caracteresAnalisados do corpus.
 - Tudo em português do Brasil.
 - Se evidência for fraca, diga isso, reduza o score e marque "inconsistencias".`;
 
     const prompt = `CATEGORIA / MODO: ${data.categoria}
 ALVO: ${data.query}
+MOTORES_CADASTRADOS: ${SOURCE_REGISTRY_COUNT}
+MOTORES_EXECUTADOS_NESTA_BUSCA: ${attemptedEngines}
+FONTES_VALIDADAS_E_LIDAS_INTEGRALMENTE: ${evidence.length}
+
+CORPUS_VALIDADO — use SOMENTE estas fontes; cada bloco contém conteúdo integral coletado:
+${evidencePromptBlock(evidence)}
 
 Responda SOMENTE com JSON válido (sem markdown, sem texto fora do objeto):
 {
@@ -551,16 +565,17 @@ Responda SOMENTE com JSON válido (sem markdown, sem texto fora do objeto):
   "relatorioAnalitico": "string (denso, multi-parágrafo)",
   "scoreVeracidade": 0-100,
   "metodologia": "string descrevendo as transforms aplicadas e o cálculo do score",
+  "coberturaFontes": { "fontesCadastradas": ${SOURCE_REGISTRY_COUNT}, "motoresExecutados": ${attemptedEngines}, "fontesVerificadas": ${evidence.length}, "fontesComConteudoIntegral": ${evidence.length}, "fontesRejeitadas": ${rejectedSources}, "aviso": "string" },
   "principaisFatos": ["string"],
   "cronologia": [{ "data": "AAAA-MM-DD ou descrição", "evento": "string" }],
   "temasRecorrentes": ["string"],
   "divergencias": ["string"],
   "inconsistencias": ["string"],
   "relacoes": [{ "de": "string", "para": "string", "tipo": "string" }],
-  "fontes": [{ "categoria": "string (Imprensa|Rede Social|Acadêmico|Comunidade|Registro Público|Documento)", "titulo": "string", "autorOuPerfil": "string", "veiculo": "string", "data": "string", "url": "string", "confiabilidade": "Alta|Média|Baixa", "justificativaConfiabilidade": "string", "trecho": "string" }]
+  "fontes": [{ "categoria": "string (Imprensa|Rede Social|Acadêmico|Comunidade|Registro Público|Documento|Chan / Deepweb pública)", "titulo": "string", "autorOuPerfil": "string", "veiculo": "string", "data": "string", "url": "string exata do corpus", "confiabilidade": "Alta|Média|Baixa", "justificativaConfiabilidade": "string", "trecho": "string", "textoCompletoAnalisado": true, "caracteresAnalisados": 0, "hashConteudo": "string exata do corpus" }]
 }
 
-Mínimo de 6 fontes diversificadas entre camadas quando o alvo permitir. Inclua ≥3 arestas em "relacoes".`;
+Inclua apenas fatos sustentados pelo corpus validado. Se houver poucas fontes, declare limitação em vez de completar com suposição.`;
 
     let text = "";
 
@@ -578,7 +593,7 @@ Mínimo de 6 fontes diversificadas entre camadas quando o alvo permitir. Inclua 
     }
 
     try {
-      return normalizeReport(extractJson(text), data.query, data.categoria, text);
+      return enforceEvidenceOnly(normalizeReport(extractJson(text), data.query, data.categoria, text), evidence, attemptedEngines, rejectedSources);
     } catch {
       return fallbackReport(data.query, data.categoria, text);
     }
