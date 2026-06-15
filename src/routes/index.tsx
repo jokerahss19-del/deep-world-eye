@@ -44,13 +44,13 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "OLHO DO MUNDO V0.03 — OSINT/SOCMINT BRUTAL ENGINE" },
+      { title: "OLHO DO MUNDO V0.04 — OSINT/SOCMINT BRUTAL ENGINE" },
       {
         name: "description",
         content:
           "Motor de investigação OSINT multi-camadas com transforms estilo Maltego, score de veracidade algorítmico e harvest em redes sociais.",
       },
-      { property: "og:title", content: "OLHO DO MUNDO V0.03" },
+      { property: "og:title", content: "OLHO DO MUNDO V0.04" },
       {
         property: "og:description",
         content: "Investigação profunda com algoritmo Maltego de triangulação e score de veracidade.",
@@ -115,7 +115,7 @@ function Index() {
           </div>
           <div className="flex items-center gap-2">
             <div className="text-[10px] font-display text-muted-foreground hidden sm:block">
-              OSINT · SOCMINT · MALTEGO_ALGO
+              OSINT · SOCMINT · MALTEGO_ALGO · EVIDENCE_LOCK
             </div>
             <Button
               type="button"
@@ -149,7 +149,7 @@ function Index() {
             O QUE VAMOS INVESTIGAR?
           </h1>
           <p className="mt-3 text-muted-foreground text-xs font-display uppercase tracking-wide">
-            Harvest multi-camada · transforms maltego · score de veracidade algorítmico
+              100+ fontes cadastradas · leitura integral · fontes inventadas bloqueadas
           </p>
         </div>
 
@@ -236,7 +236,7 @@ function Index() {
       {!activeEntry && !mutation.isPending && (
         <footer className="max-w-3xl mx-auto px-4 pb-12 text-center">
           <p className="text-[10px] font-display text-muted-foreground uppercase tracking-widest">
-            // beta · IA gera hipóteses · sempre confirme nas fontes citadas
+            // beta · sem fonte validada não há relatório factual
           </p>
         </footer>
       )}

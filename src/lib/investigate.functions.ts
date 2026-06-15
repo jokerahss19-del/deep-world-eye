@@ -21,6 +21,8 @@ export const CATEGORIES = [
   "Telegram",
   "Facebook",
   "GitHub",
+  "Deepweb Pública / Chans",
+  "4chan / 8kun / Arquivos",
   "Análise Maltego (Grafo)",
 ] as const;
 
