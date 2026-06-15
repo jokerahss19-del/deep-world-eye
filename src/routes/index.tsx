@@ -110,7 +110,7 @@ function Index() {
             <Eye className="size-5 text-primary" />
             <div className="font-display text-xs tracking-widest text-foreground">
               [OLHO_DO_MUNDO]
-              <span className="ml-2 text-muted-foreground">V0.03</span>
+              <span className="ml-2 text-muted-foreground">V0.04</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -499,11 +499,24 @@ function ReportView({
         </TabsContent>
 
         <TabsContent value="metodo" className="mt-3">
-          <Card className="p-4 border-2 border-border">
+          <Card className="p-4 border-2 border-border mb-3">
             <SectionTitle>metodologia_maltego</SectionTitle>
             <div className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
               {report.metodologia}
             </div>
+          </Card>
+          <Card className="p-4 border-2 border-border">
+            <SectionTitle>evidence_lock</SectionTitle>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+              <Metric label="fontes_cadastradas" value={report.coberturaFontes.fontesCadastradas} />
+              <Metric label="motores_exec" value={report.coberturaFontes.motoresExecutados} />
+              <Metric label="fontes_validadas" value={report.coberturaFontes.fontesVerificadas} />
+              <Metric label="lidas_inteiras" value={report.coberturaFontes.fontesComConteudoIntegral} />
+              <Metric label="rejeitadas" value={report.coberturaFontes.fontesRejeitadas} />
+            </div>
+            <p className="mt-3 text-[10px] font-display uppercase tracking-wider text-muted-foreground">
+              // {report.coberturaFontes.aviso}
+            </p>
           </Card>
         </TabsContent>
 
@@ -580,6 +593,9 @@ function ReportView({
               <p className="text-[10px] text-muted-foreground mt-2 italic">
                 // confiabilidade: {s.justificativaConfiabilidade}
               </p>
+              <p className="text-[10px] font-display text-muted-foreground mt-2 uppercase tracking-wider">
+                // inteiro={String(s.textoCompletoAnalisado)} · chars={s.caracteresAnalisados} · hash={s.hashConteudo}
+              </p>
               <a
                 href={s.url}
                 target="_blank"
@@ -601,5 +617,16 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     <h3 className="font-display text-[10px] uppercase tracking-widest text-primary mb-2 border-b border-border pb-1">
       &gt; {children}
     </h3>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border-2 border-border bg-background p-2">
+      <div className="font-display text-[9px] uppercase tracking-widest text-muted-foreground break-words">
+        {label}
+      </div>
+      <div className="font-display text-xl text-primary">{value}</div>
+    </div>
   );
 }
