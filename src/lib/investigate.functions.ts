@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway.server";
-import { SOURCE_REGISTRY_COUNT } from "./source-registry";
+import { SOURCE_REGISTRY, SOURCE_REGISTRY_COUNT, type SourceCategory } from "./source-registry";
 
 export const CATEGORIES = [
   "Pesquisa Livre",
@@ -102,6 +102,10 @@ const extractJson = (text: string) => {
   return JSON.parse(candidate) as unknown;
 };
 
+type EvidenceSource = InvestigationReport["fontes"][number] & {
+  conteudoIntegral: string;
+};
+
 const defaultCoverage = (aviso: string) => ({
   fontesCadastradas: SOURCE_REGISTRY_COUNT,
   motoresExecutados: 0,
@@ -110,6 +114,100 @@ const defaultCoverage = (aviso: string) => ({
   fontesRejeitadas: 0,
   aviso,
 });
+
+const hashText = (text: string) => {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+};
+
+const htmlToText = (html: string) =>
+  html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const cleanText = (text: string) =>
+  text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+const isProbablyUrl = (value: string) => {
+  try {
+    const url = new URL(value.startsWith("http") ? value : `https://${value}`);
+    return Boolean(url.hostname.includes("."));
+  } catch {
+    return false;
+  }
+};
+
+const safeUrl = (value: string) => {
+  try {
+    const url = new URL(value.startsWith("http") ? value : `https://${value}`);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+};
+
+const fetchText = async (url: string) => {
+  const response = await fetch(url, {
+    headers: { accept: "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8" },
+    signal: AbortSignal.timeout(9000),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const contentType = response.headers.get("content-type") ?? "";
+  const raw = await response.text();
+  const text = contentType.includes("json") ? cleanText(JSON.stringify(JSON.parse(raw))) : htmlToText(raw);
+  if (text.length < 220) throw new Error("conteúdo insuficiente");
+  return text;
+};
+
+const makeEvidence = async ({
+  category,
+  title,
+  url,
+  vehicle,
+  author = "",
+  date = "",
+  content,
+}: {
+  category: SourceCategory;
+  title: string;
+  url: string;
+  vehicle: string;
+  author?: string;
+  date?: string;
+  content?: string;
+}): Promise<EvidenceSource | null> => {
+  const sourceUrl = safeUrl(url);
+  if (!sourceUrl) return null;
+  const fullText = content?.trim() || await fetchText(sourceUrl);
+  if (fullText.length < 220 || fullText.length > 30000) return null;
+  return {
+    categoria: category,
+    titulo: title || sourceUrl,
+    autorOuPerfil: author,
+    veiculo: vehicle,
+    data: date,
+    url: sourceUrl,
+    confiabilidade: category === "Acadêmico" || category === "Registro Público" || category === "Imprensa" ? "Alta" : "Média",
+    justificativaConfiabilidade: "Fonte coletada e lida integralmente pelo backend antes de ser enviada à IA; rejeitada se inacessível, curta demais ou grande demais para leitura integral.",
+    trecho: fullText.slice(0, 480),
+    textoCompletoAnalisado: true,
+    caracteresAnalisados: fullText.length,
+    hashConteudo: hashText(fullText),
+    conteudoIntegral: fullText,
+  };
+};
 
 const fallbackReport = (query: string, categoria: string, rawText?: string): InvestigationReport => ({
   resumoExecutivo: `A investigação sobre "${query}" foi concluída, mas a resposta precisou ser recuperada em modo seguro porque veio fora do formato esperado.`,
