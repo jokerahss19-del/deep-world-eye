@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "./ai-gateway.server";
+import { SOURCE_REGISTRY_COUNT } from "./source-registry";
 
 export const CATEGORIES = [
   "Pesquisa Livre",
@@ -28,6 +29,14 @@ const reportSchema = z.object({
   relatorioAnalitico: z.string(),
   scoreVeracidade: z.number(),
   metodologia: z.string(),
+  coberturaFontes: z.object({
+    fontesCadastradas: z.number(),
+    motoresExecutados: z.number(),
+    fontesVerificadas: z.number(),
+    fontesComConteudoIntegral: z.number(),
+    fontesRejeitadas: z.number(),
+    aviso: z.string(),
+  }),
   principaisFatos: z.array(z.string()),
   cronologia: z.array(z.object({
     data: z.string(),
@@ -51,6 +60,9 @@ const reportSchema = z.object({
     confiabilidade: z.string(),
     justificativaConfiabilidade: z.string(),
     trecho: z.string(),
+    textoCompletoAnalisado: z.boolean(),
+    caracteresAnalisados: z.number(),
+    hashConteudo: z.string(),
   })),
 });
 
