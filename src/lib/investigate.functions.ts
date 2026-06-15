@@ -191,7 +191,7 @@ const makeEvidence = async ({
   const sourceUrl = safeUrl(url);
   if (!sourceUrl) return null;
   const fullText = content?.trim() || await fetchText(sourceUrl);
-  if (fullText.length < 220 || fullText.length > 30000) return null;
+  if (fullText.length < 220 || fullText.length > 9000) return null;
   return {
     categoria: category,
     titulo: title || sourceUrl,
@@ -207,6 +207,123 @@ const makeEvidence = async ({
     hashConteudo: hashText(fullText),
     conteudoIntegral: fullText,
   };
+};
+
+const uniqueEvidence = (items: Array<EvidenceSource | null>) => {
+  const seen = new Set<string>();
+  return items.filter((item): item is EvidenceSource => {
+    if (!item || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
+};
+
+const collectDirectUrlEvidence = async (query: string) => {
+  const urls = query.match(/https?:\/\/[^\s]+|\b[a-z0-9.-]+\.[a-z]{2,}\S*/gi) ?? [];
+  const tasks = urls.slice(0, 4).map((url) => makeEvidence({
+    category: "Documento",
+    title: `URL informada: ${url}`,
+    url,
+    vehicle: new URL(safeUrl(url)).hostname,
+  }));
+  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+};
+
+const collectWikipediaEvidence = async (query: string) => {
+  const endpoint = `https://pt.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=2&namespace=0&format=json`;
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(8000) });
+  const data = await response.json() as [string, string[], string[], string[]];
+  const pages = data[1].map((title, index) => ({ title, url: data[3][index] })).filter((item) => item.url);
+  const tasks = pages.map(async (page) => {
+    const extractEndpoint = `https://pt.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&titles=${encodeURIComponent(page.title)}`;
+    const extractResponse = await fetch(extractEndpoint, { signal: AbortSignal.timeout(8000) });
+    const extractData = await extractResponse.json() as { query?: { pages?: Record<string, { extract?: string }> } };
+    const extract = Object.values(extractData.query?.pages ?? {})[0]?.extract ?? "";
+    return makeEvidence({ category: "Enciclopédia", title: page.title, url: page.url, vehicle: "Wikipedia", content: cleanText(extract) });
+  });
+  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+};
+
+const collectWikidataEvidence = async (query: string) => {
+  const endpoint = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(query)}&language=pt&limit=2&format=json`;
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(8000) });
+  const data = await response.json() as { search?: Array<{ id: string; label?: string; description?: string; concepturi?: string }> };
+  const tasks = (data.search ?? []).map(async (item) => {
+    const entityUrl = `https://www.wikidata.org/wiki/Special:EntityData/${item.id}.json`;
+    const entityResponse = await fetch(entityUrl, { signal: AbortSignal.timeout(8000) });
+    const entityText = cleanText(JSON.stringify(await entityResponse.json()));
+    return makeEvidence({ category: "Registro Público", title: item.label || item.id, url: item.concepturi || `https://www.wikidata.org/wiki/${item.id}`, vehicle: "Wikidata", content: entityText });
+  });
+  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+};
+
+const collectArxivEvidence = async (query: string) => {
+  const endpoint = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=2`;
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(9000) });
+  const xml = await response.text();
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].slice(0, 2);
+  return uniqueEvidence(await Promise.all(entries.map((entry) => {
+    const block = entry[1];
+    const title = cleanText(block.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "arXiv result");
+    const summary = cleanText(block.match(/<summary>([\s\S]*?)<\/summary>/)?.[1] ?? "");
+    const url = block.match(/<id>(.*?)<\/id>/)?.[1] ?? "https://arxiv.org/";
+    return makeEvidence({ category: "Acadêmico", title, url, vehicle: "arXiv", content: `${title}. ${summary}` });
+  })));
+};
+
+const collectCrossrefEvidence = async (query: string) => {
+  const endpoint = `https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=2`;
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(9000) });
+  const data = await response.json() as { message?: { items?: Array<Record<string, unknown>> } };
+  return uniqueEvidence(await Promise.all((data.message?.items ?? []).map((item) => {
+    const title = Array.isArray(item.title) ? asText(item.title[0], "Crossref record") : "Crossref record";
+    return makeEvidence({ category: "Acadêmico", title, url: asText(item.URL, "https://www.crossref.org/"), vehicle: "Crossref", content: cleanText(JSON.stringify(item)) });
+  })));
+};
+
+const collectHackerNewsEvidence = async (query: string) => {
+  const endpoint = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=2`;
+  const response = await fetch(endpoint, { signal: AbortSignal.timeout(8000) });
+  const data = await response.json() as { hits?: Array<{ objectID: string; title?: string; url?: string; created_at?: string; author?: string }> };
+  const tasks = (data.hits ?? []).map(async (hit) => {
+    const itemResponse = await fetch(`https://hn.algolia.com/api/v1/items/${hit.objectID}`, { signal: AbortSignal.timeout(8000) });
+    const item = await itemResponse.json();
+    return makeEvidence({ category: "Comunidade", title: hit.title || "Hacker News", url: `https://news.ycombinator.com/item?id=${hit.objectID}`, vehicle: "Hacker News", author: hit.author, date: hit.created_at, content: cleanText(JSON.stringify(item)) });
+  });
+  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+};
+
+const collectFourChanEvidence = async (query: string) => {
+  const terms = query.toLowerCase().split(/\s+/).filter((term) => term.length > 3).slice(0, 4);
+  if (terms.length === 0) return [];
+  const boards = ["pol", "news", "g", "biz", "sci", "x"];
+  const matches: Array<{ board: string; thread: number; title: string }> = [];
+  for (const board of boards) {
+    if (matches.length >= 2) break;
+    try {
+      const response = await fetch(`https://a.4cdn.org/${board}/catalog.json`, { signal: AbortSignal.timeout(8000) });
+      const catalog = await response.json() as Array<{ threads?: Array<{ no: number; sub?: string; com?: string }> }>;
+      for (const page of catalog) {
+        const match = (page.threads ?? []).find((thread) => {
+          const haystack = cleanText(`${thread.sub ?? ""} ${thread.com ?? ""}`).toLowerCase();
+          return terms.some((term) => haystack.includes(term));
+        });
+        if (match) {
+          matches.push({ board, thread: match.no, title: cleanText(match.sub || match.com || `4chan /${board}/ thread ${match.no}`).slice(0, 120) });
+          break;
+        }
+      }
+    } catch {
+      // fonte indisponível; não citar
+    }
+  }
+  const tasks = matches.map(async (match) => {
+    const response = await fetch(`https://a.4cdn.org/${match.board}/thread/${match.thread}.json`, { signal: AbortSignal.timeout(8000) });
+    const data = await response.json() as { posts?: Array<{ no: number; name?: string; now?: string; com?: string }> };
+    const content = (data.posts ?? []).map((post) => `[${post.no}] ${post.name ?? "anon"} ${post.now ?? ""}: ${cleanText(post.com ?? "")}`).join("\n");
+    return makeEvidence({ category: "Chan / Deepweb pública", title: match.title, url: `https://boards.4chan.org/${match.board}/thread/${match.thread}`, vehicle: `4chan /${match.board}/`, content });
+  });
+  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
 };
 
 const fallbackReport = (query: string, categoria: string, rawText?: string): InvestigationReport => ({
