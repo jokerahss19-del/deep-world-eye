@@ -220,7 +220,7 @@ const uniqueEvidence = (items: Array<EvidenceSource | null>) => {
 
 const collectDirectUrlEvidence = async (query: string) => {
   const urls = query.match(/https?:\/\/[^\s]+|\b[a-z0-9.-]+\.[a-z]{2,}\S*/gi) ?? [];
-  const tasks = urls.slice(0, 4).map((url) => makeEvidence({
+  const tasks = urls.filter(isProbablyUrl).slice(0, 4).map((url) => makeEvidence({
     category: "Documento",
     title: `URL informada: ${url}`,
     url,
@@ -405,6 +405,28 @@ const enforceEvidenceOnly = (
       : report.inconsistencias,
   };
 };
+
+const noEvidenceReport = (query: string, categoria: string, attemptedEngines: number, rejectedSources: number): InvestigationReport => ({
+  resumoExecutivo: `Não há dossiê confiável sobre "${query}" porque nenhuma fonte acessível foi lida integralmente e validada.`,
+  relatorioAnalitico: `Modo ${categoria}: a busca consultou motores públicos e canais de deepweb pública, mas todas as fontes candidatas foram rejeitadas por inacessibilidade, conteúdo insuficiente, bloqueio, ausência de correspondência ou impossibilidade de leitura integral. Para impedir alucinação, a IA não recebeu autorização para criar fontes ou inferir URLs.`,
+  scoreVeracidade: 0,
+  metodologia: "Fail-closed OSINT: coleta → leitura integral → hash de conteúdo → validação de URL → somente então análise por IA. Sem corpus validado, não há análise factual.",
+  coberturaFontes: {
+    fontesCadastradas: SOURCE_REGISTRY_COUNT,
+    motoresExecutados: attemptedEngines,
+    fontesVerificadas: 0,
+    fontesComConteudoIntegral: 0,
+    fontesRejeitadas: rejectedSources,
+    aviso: "Nenhuma fonte inventada: sem conteúdo integral validado, o relatório permanece vazio.",
+  },
+  principaisFatos: [],
+  cronologia: [],
+  temasRecorrentes: [],
+  divergencias: [],
+  inconsistencias: ["Nenhuma fonte integralmente lida e validada foi encontrada para sustentar afirmações."],
+  relacoes: [],
+  fontes: [],
+});
 
 const fallbackReport = (query: string, categoria: string, rawText?: string): InvestigationReport => ({
   resumoExecutivo: `A investigação sobre "${query}" foi concluída, mas a resposta precisou ser recuperada em modo seguro porque veio fora do formato esperado.`,
