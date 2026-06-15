@@ -40,32 +40,38 @@ const reportSchema = z.object({
     aviso: z.string(),
   }),
   principaisFatos: z.array(z.string()),
-  cronologia: z.array(z.object({
-    data: z.string(),
-    evento: z.string(),
-  })),
+  cronologia: z.array(
+    z.object({
+      data: z.string(),
+      evento: z.string(),
+    }),
+  ),
   temasRecorrentes: z.array(z.string()),
   divergencias: z.array(z.string()),
   inconsistencias: z.array(z.string()),
-  relacoes: z.array(z.object({
-    de: z.string(),
-    para: z.string(),
-    tipo: z.string(),
-  })),
-  fontes: z.array(z.object({
-    categoria: z.string(),
-    titulo: z.string(),
-    autorOuPerfil: z.string(),
-    veiculo: z.string(),
-    data: z.string(),
-    url: z.string(),
-    confiabilidade: z.string(),
-    justificativaConfiabilidade: z.string(),
-    trecho: z.string(),
-    textoCompletoAnalisado: z.boolean(),
-    caracteresAnalisados: z.number(),
-    hashConteudo: z.string(),
-  })),
+  relacoes: z.array(
+    z.object({
+      de: z.string(),
+      para: z.string(),
+      tipo: z.string(),
+    }),
+  ),
+  fontes: z.array(
+    z.object({
+      categoria: z.string(),
+      titulo: z.string(),
+      autorOuPerfil: z.string(),
+      veiculo: z.string(),
+      data: z.string(),
+      url: z.string(),
+      confiabilidade: z.string(),
+      justificativaConfiabilidade: z.string(),
+      trecho: z.string(),
+      textoCompletoAnalisado: z.boolean(),
+      caracteresAnalisados: z.number(),
+      hashConteudo: z.string(),
+    }),
+  ),
 });
 
 export type InvestigationReport = z.infer<typeof reportSchema>;
@@ -79,7 +85,8 @@ const asText = (value: unknown, fallback = "") =>
   typeof value === "string" ? value.trim() : fallback;
 
 const asNumber = (value: unknown, fallback = 0) => {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.min(100, Math.round(value)));
+  if (typeof value === "number" && Number.isFinite(value))
+    return Math.max(0, Math.min(100, Math.round(value)));
   if (typeof value === "string") {
     const n = parseFloat(value);
     if (Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(n)));
@@ -149,7 +156,10 @@ const htmlToText = (html: string) =>
     .trim();
 
 const cleanText = (text: string) =>
-  text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  text
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 const isProbablyUrl = (value: string) => {
   try {
@@ -171,13 +181,17 @@ const safeUrl = (value: string) => {
 
 const fetchText = async (url: string) => {
   const response = await fetch(url, {
-    headers: { accept: "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8" },
+    headers: {
+      accept: "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8",
+    },
     signal: AbortSignal.timeout(9000),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const contentType = response.headers.get("content-type") ?? "";
   const raw = await response.text();
-  const text = contentType.includes("json") ? cleanText(JSON.stringify(JSON.parse(raw))) : htmlToText(raw);
+  const text = contentType.includes("json")
+    ? cleanText(JSON.stringify(JSON.parse(raw)))
+    : htmlToText(raw);
   if (text.length < 220) throw new Error("conteúdo insuficiente");
   return text;
 };
@@ -201,7 +215,7 @@ const makeEvidence = async ({
 }): Promise<EvidenceSource | null> => {
   const sourceUrl = safeUrl(url);
   if (!sourceUrl) return null;
-  const fullText = content?.trim() || await fetchText(sourceUrl);
+  const fullText = content?.trim() || (await fetchText(sourceUrl));
   if (fullText.length < 220 || fullText.length > 9000) return null;
   return {
     categoria: category,
@@ -210,8 +224,12 @@ const makeEvidence = async ({
     veiculo: vehicle,
     data: date,
     url: sourceUrl,
-    confiabilidade: category === "Acadêmico" || category === "Registro Público" || category === "Imprensa" ? "Alta" : "Média",
-    justificativaConfiabilidade: "Fonte coletada e lida integralmente pelo backend antes de ser enviada à IA; rejeitada se inacessível, curta demais ou grande demais para leitura integral.",
+    confiabilidade:
+      category === "Acadêmico" || category === "Registro Público" || category === "Imprensa"
+        ? "Alta"
+        : "Média",
+    justificativaConfiabilidade:
+      "Fonte coletada e lida integralmente pelo backend antes de ser enviada à IA; rejeitada se inacessível, curta demais ou grande demais para leitura integral.",
     trecho: fullText.slice(0, 480),
     textoCompletoAnalisado: true,
     caracteresAnalisados: fullText.length,
@@ -231,44 +249,71 @@ const uniqueEvidence = (items: Array<EvidenceSource | null>) => {
 
 const collectDirectUrlEvidence = async (query: string) => {
   const urls = query.match(/https?:\/\/[^\s]+|\b[a-z0-9.-]+\.[a-z]{2,}\S*/gi) ?? [];
-  const tasks = urls.filter(isProbablyUrl).slice(0, 4).map((url) => {
-    const normalized = safeUrl(url);
-    return makeEvidence({
-      category: "Documento",
-      title: `URL informada: ${url}`,
-      url: normalized,
-      vehicle: normalized ? new URL(normalized).hostname : "URL informada",
+  const tasks = urls
+    .filter(isProbablyUrl)
+    .slice(0, 4)
+    .map((url) => {
+      const normalized = safeUrl(url);
+      return makeEvidence({
+        category: "Documento",
+        title: `URL informada: ${url}`,
+        url: normalized,
+        vehicle: normalized ? new URL(normalized).hostname : "URL informada",
+      });
     });
-  });
-  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+  return Promise.allSettled(tasks).then((results) =>
+    uniqueEvidence(results.map((result) => (result.status === "fulfilled" ? result.value : null))),
+  );
 };
 
 const collectWikipediaEvidence = async (query: string) => {
   const endpoint = `https://pt.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=2&namespace=0&format=json`;
   const response = await fetch(endpoint, { signal: AbortSignal.timeout(8000) });
-  const data = await response.json() as [string, string[], string[], string[]];
-  const pages = data[1].map((title, index) => ({ title, url: data[3][index] })).filter((item) => item.url);
+  const data = (await response.json()) as [string, string[], string[], string[]];
+  const pages = data[1]
+    .map((title, index) => ({ title, url: data[3][index] }))
+    .filter((item) => item.url);
   const tasks = pages.map(async (page) => {
     const extractEndpoint = `https://pt.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&redirects=1&format=json&titles=${encodeURIComponent(page.title)}`;
     const extractResponse = await fetch(extractEndpoint, { signal: AbortSignal.timeout(8000) });
-    const extractData = await extractResponse.json() as { query?: { pages?: Record<string, { extract?: string }> } };
+    const extractData = (await extractResponse.json()) as {
+      query?: { pages?: Record<string, { extract?: string }> };
+    };
     const extract = Object.values(extractData.query?.pages ?? {})[0]?.extract ?? "";
-    return makeEvidence({ category: "Enciclopédia", title: page.title, url: page.url, vehicle: "Wikipedia", content: cleanText(extract) });
+    return makeEvidence({
+      category: "Enciclopédia",
+      title: page.title,
+      url: page.url,
+      vehicle: "Wikipedia",
+      content: cleanText(extract),
+    });
   });
-  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+  return Promise.allSettled(tasks).then((results) =>
+    uniqueEvidence(results.map((result) => (result.status === "fulfilled" ? result.value : null))),
+  );
 };
 
 const collectWikidataEvidence = async (query: string) => {
   const endpoint = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(query)}&language=pt&limit=2&format=json`;
   const response = await fetch(endpoint, { signal: AbortSignal.timeout(8000) });
-  const data = await response.json() as { search?: Array<{ id: string; label?: string; description?: string; concepturi?: string }> };
+  const data = (await response.json()) as {
+    search?: Array<{ id: string; label?: string; description?: string; concepturi?: string }>;
+  };
   const tasks = (data.search ?? []).map(async (item) => {
     const entityUrl = `https://www.wikidata.org/wiki/Special:EntityData/${item.id}.json`;
     const entityResponse = await fetch(entityUrl, { signal: AbortSignal.timeout(8000) });
     const entityText = cleanText(JSON.stringify(await entityResponse.json()));
-    return makeEvidence({ category: "Registro Público", title: item.label || item.id, url: item.concepturi || `https://www.wikidata.org/wiki/${item.id}`, vehicle: "Wikidata", content: entityText });
+    return makeEvidence({
+      category: "Registro Público",
+      title: item.label || item.id,
+      url: item.concepturi || `https://www.wikidata.org/wiki/${item.id}`,
+      vehicle: "Wikidata",
+      content: entityText,
+    });
   });
-  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+  return Promise.allSettled(tasks).then((results) =>
+    uniqueEvidence(results.map((result) => (result.status === "fulfilled" ? result.value : null))),
+  );
 };
 
 const collectArxivEvidence = async (query: string) => {
@@ -276,54 +321,111 @@ const collectArxivEvidence = async (query: string) => {
   const response = await fetch(endpoint, { signal: AbortSignal.timeout(9000) });
   const xml = await response.text();
   const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].slice(0, 2);
-  return uniqueEvidence(await Promise.all(entries.map((entry) => {
-    const block = entry[1];
-    const title = cleanText(block.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "arXiv result");
-    const summary = cleanText(block.match(/<summary>([\s\S]*?)<\/summary>/)?.[1] ?? "");
-    const url = block.match(/<id>(.*?)<\/id>/)?.[1] ?? "https://arxiv.org/";
-    return makeEvidence({ category: "Acadêmico", title, url, vehicle: "arXiv", content: `${title}. ${summary}` });
-  })));
+  return uniqueEvidence(
+    await Promise.all(
+      entries.map((entry) => {
+        const block = entry[1];
+        const title = cleanText(block.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "arXiv result");
+        const summary = cleanText(block.match(/<summary>([\s\S]*?)<\/summary>/)?.[1] ?? "");
+        const url = block.match(/<id>(.*?)<\/id>/)?.[1] ?? "https://arxiv.org/";
+        return makeEvidence({
+          category: "Acadêmico",
+          title,
+          url,
+          vehicle: "arXiv",
+          content: `${title}. ${summary}`,
+        });
+      }),
+    ),
+  );
 };
 
 const collectCrossrefEvidence = async (query: string) => {
   const endpoint = `https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=2`;
   const response = await fetch(endpoint, { signal: AbortSignal.timeout(9000) });
-  const data = await response.json() as { message?: { items?: Array<Record<string, unknown>> } };
-  return uniqueEvidence(await Promise.all((data.message?.items ?? []).map((item) => {
-    const title = Array.isArray(item.title) ? asText(item.title[0], "Crossref record") : "Crossref record";
-    return makeEvidence({ category: "Acadêmico", title, url: asText(item.URL, "https://www.crossref.org/"), vehicle: "Crossref", content: cleanText(JSON.stringify(item)) });
-  })));
+  const data = (await response.json()) as { message?: { items?: Array<Record<string, unknown>> } };
+  return uniqueEvidence(
+    await Promise.all(
+      (data.message?.items ?? []).map((item) => {
+        const title = Array.isArray(item.title)
+          ? asText(item.title[0], "Crossref record")
+          : "Crossref record";
+        return makeEvidence({
+          category: "Acadêmico",
+          title,
+          url: asText(item.URL, "https://www.crossref.org/"),
+          vehicle: "Crossref",
+          content: cleanText(JSON.stringify(item)),
+        });
+      }),
+    ),
+  );
 };
 
 const collectHackerNewsEvidence = async (query: string) => {
   const endpoint = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(query)}&tags=story&hitsPerPage=2`;
   const response = await fetch(endpoint, { signal: AbortSignal.timeout(8000) });
-  const data = await response.json() as { hits?: Array<{ objectID: string; title?: string; url?: string; created_at?: string; author?: string }> };
+  const data = (await response.json()) as {
+    hits?: Array<{
+      objectID: string;
+      title?: string;
+      url?: string;
+      created_at?: string;
+      author?: string;
+    }>;
+  };
   const tasks = (data.hits ?? []).map(async (hit) => {
-    const itemResponse = await fetch(`https://hn.algolia.com/api/v1/items/${hit.objectID}`, { signal: AbortSignal.timeout(8000) });
+    const itemResponse = await fetch(`https://hn.algolia.com/api/v1/items/${hit.objectID}`, {
+      signal: AbortSignal.timeout(8000),
+    });
     const item = await itemResponse.json();
-    return makeEvidence({ category: "Comunidade", title: hit.title || "Hacker News", url: `https://news.ycombinator.com/item?id=${hit.objectID}`, vehicle: "Hacker News", author: hit.author, date: hit.created_at, content: cleanText(JSON.stringify(item)) });
+    return makeEvidence({
+      category: "Comunidade",
+      title: hit.title || "Hacker News",
+      url: `https://news.ycombinator.com/item?id=${hit.objectID}`,
+      vehicle: "Hacker News",
+      author: hit.author,
+      date: hit.created_at,
+      content: cleanText(JSON.stringify(item)),
+    });
   });
-  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+  return Promise.allSettled(tasks).then((results) =>
+    uniqueEvidence(results.map((result) => (result.status === "fulfilled" ? result.value : null))),
+  );
 };
 
 const collectFourChanEvidence = async (query: string) => {
-  const terms = query.toLowerCase().split(/\s+/).filter((term) => term.length > 3).slice(0, 4);
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((term) => term.length > 3)
+    .slice(0, 4);
   if (terms.length === 0) return [];
   const boards = ["pol", "news", "g", "biz", "sci", "x"];
   const matches: Array<{ board: string; thread: number; title: string }> = [];
   for (const board of boards) {
     if (matches.length >= 2) break;
     try {
-      const response = await fetch(`https://a.4cdn.org/${board}/catalog.json`, { signal: AbortSignal.timeout(8000) });
-      const catalog = await response.json() as Array<{ threads?: Array<{ no: number; sub?: string; com?: string }> }>;
+      const response = await fetch(`https://a.4cdn.org/${board}/catalog.json`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      const catalog = (await response.json()) as Array<{
+        threads?: Array<{ no: number; sub?: string; com?: string }>;
+      }>;
       for (const page of catalog) {
         const match = (page.threads ?? []).find((thread) => {
           const haystack = cleanText(`${thread.sub ?? ""} ${thread.com ?? ""}`).toLowerCase();
           return terms.some((term) => haystack.includes(term));
         });
         if (match) {
-          matches.push({ board, thread: match.no, title: cleanText(match.sub || match.com || `4chan /${board}/ thread ${match.no}`).slice(0, 120) });
+          matches.push({
+            board,
+            thread: match.no,
+            title: cleanText(match.sub || match.com || `4chan /${board}/ thread ${match.no}`).slice(
+              0,
+              120,
+            ),
+          });
           break;
         }
       }
@@ -332,12 +434,29 @@ const collectFourChanEvidence = async (query: string) => {
     }
   }
   const tasks = matches.map(async (match) => {
-    const response = await fetch(`https://a.4cdn.org/${match.board}/thread/${match.thread}.json`, { signal: AbortSignal.timeout(8000) });
-    const data = await response.json() as { posts?: Array<{ no: number; name?: string; now?: string; com?: string }> };
-    const content = (data.posts ?? []).map((post) => `[${post.no}] ${post.name ?? "anon"} ${post.now ?? ""}: ${cleanText(post.com ?? "")}`).join("\n");
-    return makeEvidence({ category: "Chan / Deepweb pública", title: match.title, url: `https://boards.4chan.org/${match.board}/thread/${match.thread}`, vehicle: `4chan /${match.board}/`, content });
+    const response = await fetch(`https://a.4cdn.org/${match.board}/thread/${match.thread}.json`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = (await response.json()) as {
+      posts?: Array<{ no: number; name?: string; now?: string; com?: string }>;
+    };
+    const content = (data.posts ?? [])
+      .map(
+        (post) =>
+          `[${post.no}] ${post.name ?? "anon"} ${post.now ?? ""}: ${cleanText(post.com ?? "")}`,
+      )
+      .join("\n");
+    return makeEvidence({
+      category: "Chan / Deepweb pública",
+      title: match.title,
+      url: `https://boards.4chan.org/${match.board}/thread/${match.thread}`,
+      vehicle: `4chan /${match.board}/`,
+      content,
+    });
   });
-  return Promise.allSettled(tasks).then((results) => uniqueEvidence(results.map((result) => result.status === "fulfilled" ? result.value : null)));
+  return Promise.allSettled(tasks).then((results) =>
+    uniqueEvidence(results.map((result) => (result.status === "fulfilled" ? result.value : null))),
+  );
 };
 
 const collectEvidence = async (query: string) => {
@@ -351,7 +470,9 @@ const collectEvidence = async (query: string) => {
     collectFourChanEvidence,
   ];
   const results = await Promise.allSettled(collectors.map((collector) => collector(query)));
-  const evidence = uniqueEvidence(results.flatMap((result) => result.status === "fulfilled" ? result.value : []));
+  const evidence = uniqueEvidence(
+    results.flatMap((result) => (result.status === "fulfilled" ? result.value : [])),
+  );
   return {
     evidence,
     attemptedEngines: collectors.length,
@@ -360,18 +481,22 @@ const collectEvidence = async (query: string) => {
 };
 
 const evidencePromptBlock = (evidence: EvidenceSource[]) =>
-  evidence.map((source, index) => [
-    `FONTE_${index + 1}`,
-    `categoria=${source.categoria}`,
-    `titulo=${source.titulo}`,
-    `veiculo=${source.veiculo}`,
-    `url=${source.url}`,
-    `hash=${source.hashConteudo}`,
-    `caracteres=${source.caracteresAnalisados}`,
-    `conteudo_integral_inicio`,
-    source.conteudoIntegral,
-    `conteudo_integral_fim`,
-  ].join("\n")).join("\n\n---\n\n");
+  evidence
+    .map((source, index) =>
+      [
+        `FONTE_${index + 1}`,
+        `categoria=${source.categoria}`,
+        `titulo=${source.titulo}`,
+        `veiculo=${source.veiculo}`,
+        `url=${source.url}`,
+        `hash=${source.hashConteudo}`,
+        `caracteres=${source.caracteresAnalisados}`,
+        `conteudo_integral_inicio`,
+        source.conteudoIntegral,
+        `conteudo_integral_fim`,
+      ].join("\n"),
+    )
+    .join("\n\n---\n\n");
 
 const stripEvidenceContent = (source: EvidenceSource): InvestigationReport["fontes"][number] => ({
   categoria: source.categoria,
@@ -404,27 +529,39 @@ const enforceEvidenceOnly = (
   });
   return {
     ...report,
-    scoreVeracidade: fontes.length < 2 ? Math.min(report.scoreVeracidade, 25) : report.scoreVeracidade,
+    scoreVeracidade:
+      fontes.length < 2 ? Math.min(report.scoreVeracidade, 25) : report.scoreVeracidade,
     coberturaFontes: {
       fontesCadastradas: SOURCE_REGISTRY_COUNT,
       motoresExecutados: attemptedEngines,
       fontesVerificadas: evidence.length,
       fontesComConteudoIntegral: evidence.length,
       fontesRejeitadas: rejectedSources + Math.max(0, report.fontes.length - fontes.length),
-      aviso: "Sem fonte inventada: o relatório só mantém URLs coletadas e lidas integralmente pelo backend. Fontes inacessíveis, parciais, curtas demais ou grandes demais são rejeitadas antes da análise.",
+      aviso:
+        "Sem fonte inventada: o relatório só mantém URLs coletadas e lidas integralmente pelo backend. Fontes inacessíveis, parciais, curtas demais ou grandes demais são rejeitadas antes da análise.",
     },
     fontes,
-    inconsistencias: fontes.length === 0
-      ? [...report.inconsistencias, "Nenhuma fonte citada pela IA passou pela validação de URL e conteúdo integral."]
-      : report.inconsistencias,
+    inconsistencias:
+      fontes.length === 0
+        ? [
+            ...report.inconsistencias,
+            "Nenhuma fonte citada pela IA passou pela validação de URL e conteúdo integral.",
+          ]
+        : report.inconsistencias,
   };
 };
 
-const noEvidenceReport = (query: string, categoria: string, attemptedEngines: number, rejectedSources: number): InvestigationReport => ({
+const noEvidenceReport = (
+  query: string,
+  categoria: string,
+  attemptedEngines: number,
+  rejectedSources: number,
+): InvestigationReport => ({
   resumoExecutivo: `Não há dossiê confiável sobre "${query}" porque nenhuma fonte acessível foi lida integralmente e validada.`,
   relatorioAnalitico: `Modo ${categoria}: a busca consultou motores públicos e canais de deepweb pública, mas todas as fontes candidatas foram rejeitadas por inacessibilidade, conteúdo insuficiente, bloqueio, ausência de correspondência ou impossibilidade de leitura integral. Para impedir alucinação, a IA não recebeu autorização para criar fontes ou inferir URLs.`,
   scoreVeracidade: 0,
-  metodologia: "Fail-closed OSINT: coleta → leitura integral → hash de conteúdo → validação de URL → somente então análise por IA. Sem corpus validado, não há análise factual.",
+  metodologia:
+    "Fail-closed OSINT: coleta → leitura integral → hash de conteúdo → validação de URL → somente então análise por IA. Sem corpus validado, não há análise factual.",
   coberturaFontes: {
     fontesCadastradas: SOURCE_REGISTRY_COUNT,
     motoresExecutados: attemptedEngines,
@@ -437,16 +574,25 @@ const noEvidenceReport = (query: string, categoria: string, attemptedEngines: nu
   cronologia: [],
   temasRecorrentes: [],
   divergencias: [],
-  inconsistencias: ["Nenhuma fonte integralmente lida e validada foi encontrada para sustentar afirmações."],
+  inconsistencias: [
+    "Nenhuma fonte integralmente lida e validada foi encontrada para sustentar afirmações.",
+  ],
   relacoes: [],
   fontes: [],
 });
 
-const aiFormatFailureReport = (query: string, categoria: string, attemptedEngines: number, rejectedSources: number, evidence: EvidenceSource[]): InvestigationReport => ({
+const aiFormatFailureReport = (
+  query: string,
+  categoria: string,
+  attemptedEngines: number,
+  rejectedSources: number,
+  evidence: EvidenceSource[],
+): InvestigationReport => ({
   resumoExecutivo: `A investigação sobre "${query}" coletou fontes reais, mas a síntese da IA foi rejeitada por formato inválido.`,
   relatorioAnalitico: `Modo ${categoria}: para evitar fontes inventadas, a resposta textual da IA foi descartada. As fontes abaixo foram coletadas, lidas integralmente e validadas pelo backend; nenhuma fonte fora desse corpus foi aceita.`,
   scoreVeracidade: 0,
-  metodologia: "Fail-closed OSINT: coleta real → leitura integral → hash → IA restrita ao corpus → validação de URLs citadas. A etapa final falhou e foi bloqueada.",
+  metodologia:
+    "Fail-closed OSINT: coleta real → leitura integral → hash → IA restrita ao corpus → validação de URLs citadas. A etapa final falhou e foi bloqueada.",
   coberturaFontes: {
     fontesCadastradas: SOURCE_REGISTRY_COUNT,
     motoresExecutados: attemptedEngines,
@@ -459,39 +605,62 @@ const aiFormatFailureReport = (query: string, categoria: string, attemptedEngine
   cronologia: [],
   temasRecorrentes: [],
   divergencias: [],
-  inconsistencias: ["A síntese da IA não passou na validação estrutural e foi bloqueada para evitar alucinação de fontes."],
+  inconsistencias: [
+    "A síntese da IA não passou na validação estrutural e foi bloqueada para evitar alucinação de fontes.",
+  ],
   relacoes: [],
   fontes: evidence.map(stripEvidenceContent),
 });
 
-const fallbackReport = (query: string, categoria: string, rawText?: string): InvestigationReport => ({
+const fallbackReport = (
+  query: string,
+  categoria: string,
+  rawText?: string,
+): InvestigationReport => ({
   resumoExecutivo: `A investigação sobre "${query}" foi concluída, mas a resposta precisou ser recuperada em modo seguro porque veio fora do formato esperado.`,
   relatorioAnalitico:
     rawText?.trim() ||
     `Não foi possível estruturar automaticamente o dossiê de ${categoria.toLowerCase()} para "${query}".`,
   scoreVeracidade: 0,
-  metodologia: "Fallback — algoritmo de triangulação não pôde ser executado por ausência de JSON estruturado.",
+  metodologia:
+    "Fallback — algoritmo de triangulação não pôde ser executado por ausência de JSON estruturado.",
   coberturaFontes: defaultCoverage("Nenhuma fonte externa foi validada no modo seguro."),
   principaisFatos: rawText ? [rawText.trim().slice(0, 700)] : [],
   cronologia: [],
   temasRecorrentes: [],
   divergencias: [],
-  inconsistencias: ["A resposta original da IA não seguiu o formato técnico esperado e foi exibida em modo seguro."],
+  inconsistencias: [
+    "A resposta original da IA não seguiu o formato técnico esperado e foi exibida em modo seguro.",
+  ],
   relacoes: [],
   fontes: [],
 });
 
-const normalizeReport = (value: unknown, query: string, categoria: string, rawText?: string): InvestigationReport => {
+const normalizeReport = (
+  value: unknown,
+  query: string,
+  categoria: string,
+  rawText?: string,
+): InvestigationReport => {
   if (!isRecord(value)) return fallbackReport(query, categoria, rawText);
 
   const report: InvestigationReport = {
     resumoExecutivo: asText(value.resumoExecutivo, `Dossiê inicial sobre "${query}".`),
-    relatorioAnalitico: asText(value.relatorioAnalitico, rawText ?? "Sem relatório analítico retornado."),
+    relatorioAnalitico: asText(
+      value.relatorioAnalitico,
+      rawText ?? "Sem relatório analítico retornado.",
+    ),
     scoreVeracidade: asNumber(value.scoreVeracidade, 0),
-    metodologia: asText(value.metodologia, "Triangulação Maltego: cruzamento de entidades, contagem de fontes independentes, ponderação por reputação e recência."),
+    metodologia: asText(
+      value.metodologia,
+      "Triangulação Maltego: cruzamento de entidades, contagem de fontes independentes, ponderação por reputação e recência.",
+    ),
     coberturaFontes: isRecord(value.coberturaFontes)
       ? {
-          fontesCadastradas: asNumber(value.coberturaFontes.fontesCadastradas, SOURCE_REGISTRY_COUNT),
+          fontesCadastradas: asNumber(
+            value.coberturaFontes.fontesCadastradas,
+            SOURCE_REGISTRY_COUNT,
+          ),
           motoresExecutados: asCount(value.coberturaFontes.motoresExecutados, 0),
           fontesVerificadas: asCount(value.coberturaFontes.fontesVerificadas, 0),
           fontesComConteudoIntegral: asCount(value.coberturaFontes.fontesComConteudoIntegral, 0),
@@ -501,38 +670,54 @@ const normalizeReport = (value: unknown, query: string, categoria: string, rawTe
       : defaultCoverage("Cobertura de fontes não informada pelo modelo."),
     principaisFatos: asTextArray(value.principaisFatos),
     cronologia: Array.isArray(value.cronologia)
-      ? value.cronologia.map((item) => {
-          const entry = isRecord(item) ? item : {};
-          return { data: asText(entry.data, "Sem data"), evento: asText(entry.evento, asText(item)) };
-        }).filter((item) => item.evento)
+      ? value.cronologia
+          .map((item) => {
+            const entry = isRecord(item) ? item : {};
+            return {
+              data: asText(entry.data, "Sem data"),
+              evento: asText(entry.evento, asText(item)),
+            };
+          })
+          .filter((item) => item.evento)
       : [],
     temasRecorrentes: asTextArray(value.temasRecorrentes),
     divergencias: asTextArray(value.divergencias),
     inconsistencias: asTextArray(value.inconsistencias),
     relacoes: Array.isArray(value.relacoes)
-      ? value.relacoes.map((item) => {
-          const entry = isRecord(item) ? item : {};
-          return { de: asText(entry.de), para: asText(entry.para), tipo: asText(entry.tipo, "relacionado") };
-        }).filter((item) => item.de || item.para)
+      ? value.relacoes
+          .map((item) => {
+            const entry = isRecord(item) ? item : {};
+            return {
+              de: asText(entry.de),
+              para: asText(entry.para),
+              tipo: asText(entry.tipo, "relacionado"),
+            };
+          })
+          .filter((item) => item.de || item.para)
       : [],
     fontes: Array.isArray(value.fontes)
-      ? value.fontes.map((item) => {
-          const entry = isRecord(item) ? item : {};
-          return {
-            categoria: asText(entry.categoria, "Fonte"),
-            titulo: asText(entry.titulo, asText(entry.url, "Fonte citada")),
-            autorOuPerfil: asText(entry.autorOuPerfil),
-            veiculo: asText(entry.veiculo),
-            data: asText(entry.data),
-            url: asText(entry.url, "#"),
-            confiabilidade: asText(entry.confiabilidade, "Média"),
-            justificativaConfiabilidade: asText(entry.justificativaConfiabilidade, "Não informado."),
-            trecho: asText(entry.trecho),
-            textoCompletoAnalisado: entry.textoCompletoAnalisado === true,
-            caracteresAnalisados: asCount(entry.caracteresAnalisados, 0),
-            hashConteudo: asText(entry.hashConteudo),
-          };
-        }).filter((item) => item.titulo || item.url !== "#")
+      ? value.fontes
+          .map((item) => {
+            const entry = isRecord(item) ? item : {};
+            return {
+              categoria: asText(entry.categoria, "Fonte"),
+              titulo: asText(entry.titulo, asText(entry.url, "Fonte citada")),
+              autorOuPerfil: asText(entry.autorOuPerfil),
+              veiculo: asText(entry.veiculo),
+              data: asText(entry.data),
+              url: asText(entry.url, "#"),
+              confiabilidade: asText(entry.confiabilidade, "Média"),
+              justificativaConfiabilidade: asText(
+                entry.justificativaConfiabilidade,
+                "Não informado.",
+              ),
+              trecho: asText(entry.trecho),
+              textoCompletoAnalisado: entry.textoCompletoAnalisado === true,
+              caracteresAnalisados: asCount(entry.caracteresAnalisados, 0),
+              hashConteudo: asText(entry.hashConteudo),
+            };
+          })
+          .filter((item) => item.titulo || item.url !== "#")
       : [],
   };
 
@@ -551,12 +736,13 @@ export const investigate = createServerFn({ method: "POST" })
     if (!key) throw new Error("LOVABLE_API_KEY ausente no ambiente do servidor.");
 
     const { evidence, attemptedEngines, rejectedSources } = await collectEvidence(data.query);
-    if (evidence.length === 0) return noEvidenceReport(data.query, data.categoria, attemptedEngines, rejectedSources);
+    if (evidence.length === 0)
+      return noEvidenceReport(data.query, data.categoria, attemptedEngines, rejectedSources);
 
     const gateway = createLovableAiGatewayProvider(key);
-    const registryPreview = SOURCE_REGISTRY
-      .map((source) => `${source.name} [${source.category}]`)
-      .join("; ");
+    const registryPreview = SOURCE_REGISTRY.map(
+      (source) => `${source.name} [${source.category}]`,
+    ).join("; ");
 
     const system = `Você é o "OLHO DO MUNDO", analista sênior de OSINT/SOCMINT operando uma plataforma inspirada na lógica de transforms da Maltego.
 
@@ -626,14 +812,31 @@ Inclua apenas fatos sustentados pelo corpus validado. Se houver poucas fontes, d
       const message =
         error instanceof Error ? error.message : "Falha desconhecida ao consultar a IA.";
       return {
-        ...aiFormatFailureReport(data.query, data.categoria, attemptedEngines, rejectedSources, evidence),
+        ...aiFormatFailureReport(
+          data.query,
+          data.categoria,
+          attemptedEngines,
+          rejectedSources,
+          evidence,
+        ),
         inconsistencias: [`Falha na chamada de IA: ${message}`],
       };
     }
 
     try {
-      return enforceEvidenceOnly(normalizeReport(extractJson(text), data.query, data.categoria, text), evidence, attemptedEngines, rejectedSources);
+      return enforceEvidenceOnly(
+        normalizeReport(extractJson(text), data.query, data.categoria, text),
+        evidence,
+        attemptedEngines,
+        rejectedSources,
+      );
     } catch {
-      return aiFormatFailureReport(data.query, data.categoria, attemptedEngines, rejectedSources, evidence);
+      return aiFormatFailureReport(
+        data.query,
+        data.categoria,
+        attemptedEngines,
+        rejectedSources,
+        evidence,
+      );
     }
   });
