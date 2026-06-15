@@ -490,10 +490,10 @@ const normalizeReport = (value: unknown, query: string, categoria: string, rawTe
     coberturaFontes: isRecord(value.coberturaFontes)
       ? {
           fontesCadastradas: asNumber(value.coberturaFontes.fontesCadastradas, SOURCE_REGISTRY_COUNT),
-          motoresExecutados: asNumber(value.coberturaFontes.motoresExecutados, 0),
-          fontesVerificadas: asNumber(value.coberturaFontes.fontesVerificadas, 0),
-          fontesComConteudoIntegral: asNumber(value.coberturaFontes.fontesComConteudoIntegral, 0),
-          fontesRejeitadas: asNumber(value.coberturaFontes.fontesRejeitadas, 0),
+          motoresExecutados: asCount(value.coberturaFontes.motoresExecutados, 0),
+          fontesVerificadas: asCount(value.coberturaFontes.fontesVerificadas, 0),
+          fontesComConteudoIntegral: asCount(value.coberturaFontes.fontesComConteudoIntegral, 0),
+          fontesRejeitadas: asCount(value.coberturaFontes.fontesRejeitadas, 0),
           aviso: asText(value.coberturaFontes.aviso, "Fontes citadas exigem evidência validada."),
         }
       : defaultCoverage("Cobertura de fontes não informada pelo modelo."),
@@ -527,7 +527,7 @@ const normalizeReport = (value: unknown, query: string, categoria: string, rawTe
             justificativaConfiabilidade: asText(entry.justificativaConfiabilidade, "Não informado."),
             trecho: asText(entry.trecho),
             textoCompletoAnalisado: entry.textoCompletoAnalisado === true,
-            caracteresAnalisados: asNumber(entry.caracteresAnalisados, 0),
+            caracteresAnalisados: asCount(entry.caracteresAnalisados, 0),
             hashConteudo: asText(entry.hashConteudo),
           };
         }).filter((item) => item.titulo || item.url !== "#")
@@ -623,12 +623,15 @@ Inclua apenas fatos sustentados pelo corpus validado. Se houver poucas fontes, d
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Falha desconhecida ao consultar a IA.";
-      return fallbackReport(data.query, data.categoria, message);
+      return {
+        ...aiFormatFailureReport(data.query, data.categoria, attemptedEngines, rejectedSources, evidence),
+        inconsistencias: [`Falha na chamada de IA: ${message}`],
+      };
     }
 
     try {
       return enforceEvidenceOnly(normalizeReport(extractJson(text), data.query, data.categoria, text), evidence, attemptedEngines, rejectedSources);
     } catch {
-      return fallbackReport(data.query, data.categoria, text);
+      return aiFormatFailureReport(data.query, data.categoria, attemptedEngines, rejectedSources, evidence);
     }
   });
